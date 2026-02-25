@@ -71,4 +71,4 @@ Set `MIND_STORE_DIR` to override the default store location (`~/.mind-store`).
 
 ## License
 
-MIT
+GNU GPL v3
