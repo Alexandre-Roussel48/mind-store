@@ -386,6 +386,7 @@ dependencies = [
  "colored",
  "dialoguer",
  "serde",
+ "serde_json",
  "toml",
  "walkdir",
 ]

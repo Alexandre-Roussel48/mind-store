@@ -1,8 +1,11 @@
 use colored::Colorize;
+use chrono::NaiveDate;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::fs;
 use walkdir::WalkDir;
 
+use crate::entry::{Entry, Kind, Priority, Status};
 use crate::store;
 
 #[derive(Default)]
@@ -29,8 +32,29 @@ struct JsonNode {
     children: Vec<JsonNode>,
 }
 
-pub fn run(subfolder: Option<&str>, json: bool) -> Result<(), String> {
+struct LsFilters {
+    kind: Option<Kind>,
+    priority: Option<Priority>,
+    status: Option<Status>,
+    tags: Vec<String>,
+    deadline: Option<NaiveDate>,
+    before: Option<NaiveDate>,
+    after: Option<NaiveDate>,
+}
+
+pub fn run(
+    subfolder: Option<&str>,
+    json: bool,
+    kind: Option<&str>,
+    priority: Option<&str>,
+    status: Option<&str>,
+    tags: &[String],
+    deadline: Option<&str>,
+    before: Option<&str>,
+    after: Option<&str>,
+) -> Result<(), String> {
     store::ensure_store_exists().map_err(|e| e.to_string())?;
+    let filters = parse_filters(kind, priority, status, tags, deadline, before, after)?;
 
     let base = match subfolder {
         Some(sub) => store::store_subpath(sub)?,
@@ -55,6 +79,14 @@ pub fn run(subfolder: Option<&str>, json: bool) -> Result<(), String> {
         let path = entry.path();
 
         if path.is_file() && path.extension().is_some_and(|ext| ext == "toml") {
+            let contents =
+                fs::read_to_string(path).map_err(|e| format!("failed to read entry file: {e}"))?;
+            let parsed: Entry = Entry::from_toml(&contents)
+                .map_err(|e| format!("failed to parse entry '{}': {e}", path.display()))?;
+            if !matches_filters(&parsed, &filters) {
+                continue;
+            }
+
             let rel = path.strip_prefix(&base).unwrap_or(path).with_extension("");
             let components: Vec<String> = rel
                 .iter()
@@ -65,8 +97,8 @@ pub fn run(subfolder: Option<&str>, json: bool) -> Result<(), String> {
     }
 
     if json {
-        let json_tree = tree_to_json(header, &root);
-        let output = serde_json::to_string_pretty(&json_tree)
+        let json_nodes = root_children_to_json(&root);
+        let output = serde_json::to_string_pretty(&json_nodes)
             .map_err(|e| format!("failed to serialize JSON: {e}"))?;
         println!("{output}");
         return Ok(());
@@ -79,6 +111,94 @@ pub fn run(subfolder: Option<&str>, json: bool) -> Result<(), String> {
     }
     print_tree(&root, "", true);
     Ok(())
+}
+
+fn parse_filters(
+    kind: Option<&str>,
+    priority: Option<&str>,
+    status: Option<&str>,
+    tags: &[String],
+    deadline: Option<&str>,
+    before: Option<&str>,
+    after: Option<&str>,
+) -> Result<LsFilters, String> {
+    let kind = kind.map(str::parse).transpose()?;
+    let priority = priority.map(str::parse).transpose()?;
+    let status = status.map(str::parse).transpose()?;
+    let deadline = parse_date(deadline, "--deadline")?;
+    let before = parse_date(before, "--before")?;
+    let after = parse_date(after, "--after")?;
+
+    Ok(LsFilters {
+        kind,
+        priority,
+        status,
+        tags: tags.iter().map(|t| t.to_lowercase()).collect(),
+        deadline,
+        before,
+        after,
+    })
+}
+
+fn parse_date(input: Option<&str>, label: &str) -> Result<Option<NaiveDate>, String> {
+    input
+        .map(|value| {
+            NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                .map_err(|e| format!("invalid {label} date format: {e}"))
+        })
+        .transpose()
+}
+
+fn matches_filters(entry: &Entry, filters: &LsFilters) -> bool {
+    if let Some(kind) = &filters.kind {
+        if &entry.kind != kind {
+            return false;
+        }
+    }
+
+    if let Some(priority) = &filters.priority {
+        if &entry.priority != priority {
+            return false;
+        }
+    }
+    if let Some(status) = &filters.status {
+        if &entry.status != status {
+            return false;
+        }
+    }
+
+    if !filters.tags.is_empty() {
+        let entry_tags: Vec<String> = entry.tags.iter().map(|t| t.to_lowercase()).collect();
+        if !filters
+            .tags
+            .iter()
+            .any(|requested| entry_tags.iter().any(|tag| tag == requested))
+        {
+            return false;
+        }
+    }
+
+    if let Some(deadline) = filters.deadline {
+        if entry.deadline != Some(deadline) {
+            return false;
+        }
+    }
+
+    if let Some(before) = filters.before {
+        match entry.deadline {
+            Some(deadline) if deadline < before => {}
+            _ => return false,
+        }
+    }
+
+    if let Some(after) = filters.after {
+        match entry.deadline {
+            Some(deadline) if deadline > after => {}
+            _ => return false,
+        }
+    }
+
+    true
 }
 
 fn print_tree(node: &TreeNode, prefix: &str, at_root: bool) {
@@ -131,4 +251,11 @@ fn tree_to_json(name: &str, node: &TreeNode) -> JsonNode {
         },
         children,
     }
+}
+
+fn root_children_to_json(root: &TreeNode) -> Vec<JsonNode> {
+    root.children
+        .iter()
+        .map(|(child_name, child_node)| tree_to_json(child_name, child_node))
+        .collect()
 }

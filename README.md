@@ -20,7 +20,7 @@ mind insert <name>             Create a new entry (interactive prompts)
 mind show <name> [--json]      Display an entry
 mind edit <name>               Edit an existing entry
 mind rm [-r] [-f] <name>       Remove an entry or folder recursively
-mind ls [subfolder/] [--json]  List entries (tree view or JSON)
+mind ls [subfolder/] [--json] [--kind <kind>] [--priority <priority>] [--status <status>] [--tag <tag>] [--deadline <date>] [--before <date>] [--after <date>]
 mind find <pattern> [--json]   Search entry names
 mind grep <pattern> [--json]   Search entry contents
 mind git <args...>             Run git commands in the store
@@ -37,6 +37,12 @@ mind edit project-x/idea-1 --priority high
 mind edit project-x/idea-1 --status done --deadline 2026-12-20
 mind edit project-x/idea-1 --tags none
 mind edit project-x/idea-1 --append-description "Follow-up note"
+
+mind ls --kind todo --priority high
+mind ls --status active --tag rust
+mind ls --tag rust --tag cli
+mind ls --before 2026-03-15
+mind ls work/ --after 2026-03-01 --json
 ```
 
 Running `mind` with no arguments is equivalent to `mind ls`.

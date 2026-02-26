@@ -12,9 +12,29 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        None => commands::ls::run(None, false),
+        None => commands::ls::run(None, false, None, None, None, &[], None, None, None),
         Some(Commands::Init { remote }) => commands::init::run(remote),
-        Some(Commands::Ls { ref subfolder, json }) => commands::ls::run(subfolder.as_deref(), json),
+        Some(Commands::Ls {
+            ref subfolder,
+            json,
+            ref kind,
+            ref priority,
+            ref status,
+            ref tag,
+            ref deadline,
+            ref before,
+            ref after,
+        }) => commands::ls::run(
+            subfolder.as_deref(),
+            json,
+            kind.as_deref(),
+            priority.as_deref(),
+            status.as_deref(),
+            tag,
+            deadline.as_deref(),
+            before.as_deref(),
+            after.as_deref(),
+        ),
         Some(Commands::Show { ref name, json }) => commands::show::run(name, json),
         Some(Commands::Insert {
             ref name,

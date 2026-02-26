@@ -27,6 +27,27 @@ pub enum Commands {
         /// Output arborescence as JSON
         #[arg(long)]
         json: bool,
+        /// Filter by kind: idea, todo, note
+        #[arg(long)]
+        kind: Option<String>,
+        /// Filter by priority: low, medium, high, critical
+        #[arg(long)]
+        priority: Option<String>,
+        /// Filter by status: active, done, archived
+        #[arg(long)]
+        status: Option<String>,
+        /// Filter by tag (can be repeated)
+        #[arg(long)]
+        tag: Vec<String>,
+        /// Filter by exact deadline (YYYY-MM-DD)
+        #[arg(long)]
+        deadline: Option<String>,
+        /// Filter by deadline before date (YYYY-MM-DD)
+        #[arg(long)]
+        before: Option<String>,
+        /// Filter by deadline after date (YYYY-MM-DD)
+        #[arg(long)]
+        after: Option<String>,
     },
 
     /// Show an entry
