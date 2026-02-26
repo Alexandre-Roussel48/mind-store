@@ -22,8 +22,8 @@ pub enum Commands {
 
     /// List entries in the store
     Ls {
-        /// Subfolder to list
-        subfolder: Option<String>,
+        /// Path to list (folder or entry path)
+        path: Option<String>,
         /// Output arborescence as JSON
         #[arg(long)]
         json: bool,

@@ -20,7 +20,7 @@ mind insert <name>             Create a new entry (interactive prompts)
 mind show <name> [--json]      Display an entry
 mind edit <name>               Edit an existing entry
 mind rm [-r] [-f] <name>       Remove an entry or folder recursively
-mind ls [subfolder/] [--json] [--kind <kind>] [--priority <priority>] [--status <status>] [--tag <tag>] [--deadline <date>] [--before <date>] [--after <date>]
+mind ls [path] [--json] [--kind <kind>] [--priority <priority>] [--status <status>] [--tag <tag>] [--deadline <date>] [--before <date>] [--after <date>]
 mind find <pattern> [--json]   Search entry names
 mind grep <pattern> [--json]   Search entry contents
 mind git <args...>             Run git commands in the store

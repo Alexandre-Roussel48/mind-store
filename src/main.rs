@@ -15,7 +15,7 @@ fn main() {
         None => commands::ls::run(None, false, None, None, None, &[], None, None, None),
         Some(Commands::Init { remote }) => commands::init::run(remote),
         Some(Commands::Ls {
-            ref subfolder,
+            ref path,
             json,
             ref kind,
             ref priority,
@@ -25,7 +25,7 @@ fn main() {
             ref before,
             ref after,
         }) => commands::ls::run(
-            subfolder.as_deref(),
+            path.as_deref(),
             json,
             kind.as_deref(),
             priority.as_deref(),

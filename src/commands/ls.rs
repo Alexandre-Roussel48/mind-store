@@ -43,7 +43,7 @@ struct LsFilters {
 }
 
 pub fn run(
-    subfolder: Option<&str>,
+    path: Option<&str>,
     json: bool,
     kind: Option<&str>,
     priority: Option<&str>,
@@ -56,8 +56,8 @@ pub fn run(
     store::ensure_store_exists().map_err(|e| e.to_string())?;
     let filters = parse_filters(kind, priority, status, tags, deadline, before, after)?;
 
-    let base = match subfolder {
-        Some(sub) => store::store_subpath(sub)?,
+    let base = match path {
+        Some(p) => store::store_subpath(p)?,
         None => store::store_dir(),
     };
 
@@ -65,7 +65,7 @@ pub fn run(
         return Err(format!("Path '{}' not found.", base.display()));
     }
 
-    let header = subfolder.unwrap_or("Mind Store");
+    let header = path.unwrap_or("Mind Store");
 
     let mut root = TreeNode::default();
 
