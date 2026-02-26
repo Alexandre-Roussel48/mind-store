@@ -1,7 +1,8 @@
+use chrono::NaiveDate;
 use dialoguer::{Editor, Input, Select};
 use std::fs;
 
-use crate::entry::{format_deadline_ddmmyyyy, parse_deadline_ddmmyyyy, Entry, Kind, Priority, Status};
+use crate::entry::{Entry, Kind, Priority, Status};
 use crate::{git, store};
 
 pub fn run(
@@ -55,7 +56,7 @@ pub fn run(
         .map_err(|e| format!("serialization error: {e}"))?;
     fs::write(&path, &toml).map_err(|e| format!("failed to write entry: {e}"))?;
 
-    git::add_and_commit(&format!("Edit {name}"))?;
+    git::add_and_commit(&format!("mind: edit {name}"))?;
     println!("Updated entry '{name}'.");
     Ok(())
 }
@@ -96,7 +97,10 @@ fn apply_flags(
         if d == "none" {
             entry.deadline = None;
         } else {
-            entry.deadline = Some(parse_deadline_ddmmyyyy(d)?);
+            entry.deadline = Some(
+                NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .map_err(|e| format!("invalid date format: {e}"))?,
+            );
         }
     }
     if let Some(t) = tags {
@@ -158,10 +162,10 @@ fn apply_interactive(entry: &mut Entry) -> Result<(), String> {
 
     let deadline_default = entry
         .deadline
-        .map(format_deadline_ddmmyyyy)
+        .map(|d| d.format("%Y-%m-%d").to_string())
         .unwrap_or_default();
     let deadline_str: String = Input::new()
-        .with_prompt("Deadline (DD-MM-YYYY, clear to remove)")
+        .with_prompt("Deadline (YYYY-MM-DD, clear to remove)")
         .with_initial_text(deadline_default)
         .allow_empty(true)
         .interact_text()
@@ -169,7 +173,10 @@ fn apply_interactive(entry: &mut Entry) -> Result<(), String> {
     entry.deadline = if deadline_str.is_empty() {
         None
     } else {
-        Some(parse_deadline_ddmmyyyy(&deadline_str)?)
+        Some(
+            NaiveDate::parse_from_str(&deadline_str, "%Y-%m-%d")
+                .map_err(|e| format!("invalid date format: {e}"))?,
+        )
     };
 
     let tags_default = entry.tags.join(", ");

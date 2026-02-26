@@ -1,15 +1,22 @@
 use colored::Colorize;
+use serde::Serialize;
 use std::fs;
 use walkdir::WalkDir;
 
 use crate::store;
 
-pub fn run(pattern: &str) -> Result<(), String> {
+#[derive(Serialize)]
+struct GrepMatch {
+    name: String,
+    lines: Vec<String>,
+}
+
+pub fn run(pattern: &str, json: bool) -> Result<(), String> {
     store::ensure_store_exists().map_err(|e| e.to_string())?;
 
     let store_root = store::store_dir();
     let pattern_lower = pattern.to_lowercase();
-    let mut found = false;
+    let mut matches: Vec<GrepMatch> = Vec::new();
 
     for result in WalkDir::new(&store_root)
         .min_depth(1)
@@ -26,19 +33,35 @@ pub fn run(pattern: &str) -> Result<(), String> {
 
             if contents.to_lowercase().contains(&pattern_lower) {
                 let name = store::entry_name(path);
-                println!("{}: ", name.bold());
+                let mut matching_lines = Vec::new();
                 for line in contents.lines() {
                     if line.to_lowercase().contains(&pattern_lower) {
-                        println!("  {line}");
+                        matching_lines.push(line.to_string());
                     }
                 }
-                found = true;
+                if !matching_lines.is_empty() {
+                    matches.push(GrepMatch {
+                        name,
+                        lines: matching_lines,
+                    });
+                }
             }
         }
     }
 
-    if !found {
+    if json {
+        let output = serde_json::to_string_pretty(&matches)
+            .map_err(|e| format!("failed to serialize JSON: {e}"))?;
+        println!("{output}");
+    } else if matches.is_empty() {
         println!("No entries contain '{pattern}'.");
+    } else {
+        for m in matches {
+            println!("{}: ", m.name.bold());
+            for line in m.lines {
+                println!("  {line}");
+            }
+        }
     }
 
     Ok(())

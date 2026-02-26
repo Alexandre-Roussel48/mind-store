@@ -15,7 +15,7 @@ fn main() {
         None => commands::ls::run(None, false),
         Some(Commands::Init { remote }) => commands::init::run(remote),
         Some(Commands::Ls { ref subfolder, json }) => commands::ls::run(subfolder.as_deref(), json),
-        Some(Commands::Show { ref name }) => commands::show::run(name),
+        Some(Commands::Show { ref name, json }) => commands::show::run(name, json),
         Some(Commands::Insert {
             ref name,
             ref kind,
@@ -55,8 +55,8 @@ fn main() {
             recursive,
             force,
         }) => commands::rm::run(name, recursive, force),
-        Some(Commands::Find { ref pattern }) => commands::find::run(pattern),
-        Some(Commands::Grep { ref pattern }) => commands::grep::run(pattern),
+        Some(Commands::Find { ref pattern, json }) => commands::find::run(pattern, json),
+        Some(Commands::Grep { ref pattern, json }) => commands::grep::run(pattern, json),
         Some(Commands::Git { ref args }) => commands::git_cmd::run(args),
     };
 

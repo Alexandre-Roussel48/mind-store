@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -150,29 +150,4 @@ impl Entry {
     pub fn touch(&mut self) {
         self.updated = Utc::now();
     }
-}
-
-pub fn parse_deadline_ddmmyyyy(input: &str) -> Result<NaiveDate, String> {
-    let parts: Vec<&str> = input.split('-').collect();
-    if parts.len() != 3
-        || parts[0].len() != 2
-        || parts[1].len() != 2
-        || parts[2].len() != 4
-        || !parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
-    {
-        return Err("invalid date format, expected DD-MM-YYYY".to_string());
-    }
-
-    let date = NaiveDate::parse_from_str(input, "%d-%m-%Y")
-        .map_err(|e| format!("invalid date value: {e}"))?;
-
-    if !(2025..=2100).contains(&date.year()) {
-        return Err("year must be between 2025 and 2100".to_string());
-    }
-
-    Ok(date)
-}
-
-pub fn format_deadline_ddmmyyyy(date: NaiveDate) -> String {
-    date.format("%d-%m-%Y").to_string()
 }

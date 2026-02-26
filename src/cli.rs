@@ -33,6 +33,9 @@ pub enum Commands {
     Show {
         /// Entry name (e.g. "project/my-idea")
         name: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Insert a new entry
@@ -48,7 +51,7 @@ pub enum Commands {
         /// Priority: low, medium, high, critical
         #[arg(short, long)]
         priority: Option<String>,
-        /// [optional] Deadline in DD-MM-YYYY format
+        /// [optional] Deadline in YYYY-MM-DD format
         #[arg(long)]
         deadline: Option<String>,
         /// [optional] Comma-separated tags
@@ -75,7 +78,7 @@ pub enum Commands {
         /// Status: active, done, archived
         #[arg(short, long)]
         status: Option<String>,
-        /// Deadline in DD-MM-YYYY format (use "none" to clear)
+        /// Deadline in YYYY-MM-DD format (use "none" to clear)
         #[arg(long)]
         deadline: Option<String>,
         /// Comma-separated tags (use "none" to clear)
@@ -99,12 +102,18 @@ pub enum Commands {
     Find {
         /// Pattern to search for
         pattern: String,
+        /// Output matches as JSON array
+        #[arg(long)]
+        json: bool,
     },
 
     /// Search entry contents
     Grep {
         /// Pattern to search for
         pattern: String,
+        /// Output matches as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Run git commands in the store directory

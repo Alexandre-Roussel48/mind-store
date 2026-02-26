@@ -57,7 +57,7 @@ pub fn run(name: &str, recursive: bool, force: bool) -> Result<(), String> {
         }
     }
 
-    git::add_and_commit(&format!("Remove {name}"))?;
+    git::add_and_commit(&format!("mind: remove {name}"))?;
     println!("Removed '{name}'.");
     Ok(())
 }

@@ -1,10 +1,10 @@
 use colored::Colorize;
 use std::fs;
 
-use crate::entry::{format_deadline_ddmmyyyy, Entry};
+use crate::entry::Entry;
 use crate::store;
 
-pub fn run(name: &str) -> Result<(), String> {
+pub fn run(name: &str, json: bool) -> Result<(), String> {
     store::ensure_store_exists().map_err(|e| e.to_string())?;
 
     let path = store::entry_path(name)?;
@@ -15,6 +15,13 @@ pub fn run(name: &str) -> Result<(), String> {
     let contents = fs::read_to_string(&path).map_err(|e| format!("failed to read entry: {e}"))?;
     let entry = Entry::from_toml(&contents).map_err(|e| format!("failed to parse entry: {e}"))?;
 
+    if json {
+        let output = serde_json::to_string_pretty(&entry)
+            .map_err(|e| format!("failed to serialize JSON: {e}"))?;
+        println!("{output}");
+        return Ok(());
+    }
+
     println!("{}", entry.name.bold());
     println!("{}: {}", "Kind".dimmed(), entry.kind);
     println!("{}: {}", "Priority".dimmed(), format_priority(&entry));
@@ -23,7 +30,7 @@ pub fn run(name: &str) -> Result<(), String> {
     println!("{}: {}", "Updated".dimmed(), entry.updated.format("%Y-%m-%d %H:%M"));
 
     if let Some(deadline) = &entry.deadline {
-        println!("{}: {}", "Deadline".dimmed(), format_deadline_ddmmyyyy(*deadline));
+        println!("{}: {}", "Deadline".dimmed(), deadline.format("%Y-%m-%d"));
     }
     if !entry.tags.is_empty() {
         println!("{}: {}", "Tags".dimmed(), entry.tags.join(", "));

@@ -1,7 +1,8 @@
+use chrono::NaiveDate;
 use dialoguer::{Editor, Input, Select};
 use std::fs;
 
-use crate::entry::{parse_deadline_ddmmyyyy, Entry, Kind, Priority};
+use crate::entry::{Entry, Kind, Priority};
 use crate::{git, store};
 
 pub fn run(
@@ -36,7 +37,7 @@ pub fn run(
     store::ensure_parent_dirs(&path).map_err(|e| e.to_string())?;
     fs::write(&path, &toml).map_err(|e| format!("failed to write entry: {e}"))?;
 
-    git::add_and_commit(&format!("Add {name}"))?;
+    git::add_and_commit(&format!("mind: add {name}"))?;
     println!("Inserted entry '{name}'.");
     Ok(())
 }
@@ -60,7 +61,10 @@ fn build_from_flags(
     );
 
     if let Some(d) = deadline {
-        entry.deadline = Some(parse_deadline_ddmmyyyy(d)?);
+        entry.deadline = Some(
+            NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .map_err(|e| format!("invalid date format: {e}"))?,
+        );
     }
 
     if let Some(t) = tags {
@@ -122,17 +126,23 @@ fn build_interactive(
 
     match deadline_flag {
         Some(d) => {
-            entry.deadline = Some(parse_deadline_ddmmyyyy(d)?);
+            entry.deadline = Some(
+                NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .map_err(|e| format!("invalid date format: {e}"))?,
+            );
         }
         None => {
             let deadline_str: String = Input::new()
-                .with_prompt("Deadline (DD-MM-YYYY, leave empty to skip)")
+                .with_prompt("Deadline (YYYY-MM-DD, leave empty to skip)")
                 .default(String::new())
                 .show_default(false)
                 .interact_text()
                 .map_err(|e| e.to_string())?;
             if !deadline_str.is_empty() {
-                entry.deadline = Some(parse_deadline_ddmmyyyy(&deadline_str)?);
+                entry.deadline = Some(
+                    NaiveDate::parse_from_str(&deadline_str, "%Y-%m-%d")
+                        .map_err(|e| format!("invalid date format: {e}"))?,
+                );
             }
         }
     }

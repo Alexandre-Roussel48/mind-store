@@ -17,12 +17,12 @@ cargo install --path .
 ```
 mind init [--remote <url>]     Initialize the store (optionally set a Git remote)
 mind insert <name>             Create a new entry (interactive prompts)
-mind show <name>               Display an entry
+mind show <name> [--json]      Display an entry
 mind edit <name>               Edit an existing entry
 mind rm [-r] [-f] <name>       Remove an entry or folder recursively
 mind ls [subfolder/] [--json]  List entries (tree view or JSON)
-mind find <pattern>            Search entry names
-mind grep <pattern>            Search entry contents
+mind find <pattern> [--json]   Search entry names
+mind grep <pattern> [--json]   Search entry contents
 mind git <args...>             Run git commands in the store
 ```
 
@@ -34,7 +34,7 @@ Examples:
 
 ```bash
 mind edit project-x/idea-1 --priority high
-mind edit project-x/idea-1 --status done --deadline 20-12-2026
+mind edit project-x/idea-1 --status done --deadline 2026-12-20
 mind edit project-x/idea-1 --tags none
 mind edit project-x/idea-1 --append-description "Follow-up note"
 ```
