@@ -2,11 +2,13 @@ use chrono::NaiveDate;
 use dialoguer::{Editor, Input, Select};
 use std::fs;
 
-use crate::entry::{Entry, Kind, Priority, Status};
-use crate::{git, store};
+use crate::entry::{normalize_namespace, normalize_tags, Entry, Kind, Priority, Status};
+use crate::{extensions, git, store};
 
 pub fn run(
-    name: &str,
+    identifier: &str,
+    title: Option<&str>,
+    namespace: Option<&str>,
     kind: Option<&str>,
     description: Option<&str>,
     append_description: Option<&str>,
@@ -17,9 +19,9 @@ pub fn run(
 ) -> Result<(), String> {
     store::ensure_store_exists().map_err(|e| e.to_string())?;
 
-    let path = store::entry_path(name)?;
+    let (path, expected_namespace, slug) = store::resolve_identifier(identifier)?;
     if !path.exists() {
-        return Err(format!("Entry '{name}' not found."));
+        return Err(format!("Entry '{slug}' not found."));
     }
 
     let contents = fs::read_to_string(&path).map_err(|e| format!("failed to read entry: {e}"))?;
@@ -27,7 +29,9 @@ pub fn run(
         Entry::from_toml(&contents).map_err(|e| format!("failed to parse entry: {e}"))?;
 
     let has_flags =
-        kind.is_some()
+        title.is_some()
+            || namespace.is_some()
+            || kind.is_some()
             || description.is_some()
             || append_description.is_some()
             || priority.is_some()
@@ -35,9 +39,21 @@ pub fn run(
             || deadline.is_some()
             || tags.is_some();
 
+    if let Some(ns) = expected_namespace {
+        if entry.namespace.as_deref() != Some(ns.as_str()) {
+            return Err(format!(
+                "Entry '{slug}' exists but is in namespace '{}' (requested '{}').",
+                entry.namespace.unwrap_or_else(|| "ungrouped".to_string()),
+                ns
+            ));
+        }
+    }
+
     if has_flags {
         apply_flags(
             &mut entry,
+            title,
+            namespace,
             kind,
             description,
             append_description,
@@ -50,19 +66,23 @@ pub fn run(
         apply_interactive(&mut entry)?;
     }
 
+    entry.normalize()?;
     entry.touch();
     let toml = entry
         .to_toml()
         .map_err(|e| format!("serialization error: {e}"))?;
     fs::write(&path, &toml).map_err(|e| format!("failed to write entry: {e}"))?;
 
-    git::add_and_commit(&format!("mind: edit {name}"))?;
-    println!("Updated entry '{name}'.");
+    git::add_and_commit(&format!("mind: edit {slug}"))?;
+    extensions::run_event("edit", &slug, Some(&entry));
+    println!("Updated entry '{slug}'.");
     Ok(())
 }
 
 fn apply_flags(
     entry: &mut Entry,
+    title: Option<&str>,
+    namespace: Option<&str>,
     kind: Option<&str>,
     description: Option<&str>,
     append_description: Option<&str>,
@@ -75,16 +95,33 @@ fn apply_flags(
         return Err("use either --description or --append-description, not both".to_string());
     }
 
+    if let Some(v) = title {
+        if v.trim().is_empty() {
+            return Err("title cannot be empty".to_string());
+        }
+        entry.title = v.trim().to_string();
+    }
+    if let Some(v) = namespace {
+        if v == "none" {
+            entry.namespace = None;
+        } else {
+            entry.namespace = normalize_namespace(v)?;
+        }
+    }
     if let Some(k) = kind {
         entry.kind = k.parse()?;
     }
     if let Some(d) = description {
-        entry.description = d.to_string();
+        entry.description = Some(d.to_string()).filter(|s| !s.trim().is_empty());
     } else if let Some(d) = append_description {
-        if entry.description.is_empty() {
-            entry.description = d.to_string();
+        if entry.description.as_deref().unwrap_or_default().is_empty() {
+            entry.description = Some(d.to_string());
         } else {
-            entry.description = format!("{}\n{}", entry.description, d);
+            entry.description = Some(format!(
+                "{}\n{}",
+                entry.description.as_deref().unwrap_or_default(),
+                d
+            ));
         }
     }
     if let Some(p) = priority {
@@ -107,16 +144,36 @@ fn apply_flags(
         if t == "none" {
             entry.tags = Vec::new();
         } else {
-            entry.tags = t.split(',').map(|s| s.trim().to_string()).collect();
+            let parsed: Vec<String> = t.split(',').map(|s| s.to_string()).collect();
+            entry.tags = normalize_tags(&parsed);
         }
     }
     Ok(())
 }
 
 fn apply_interactive(entry: &mut Entry) -> Result<(), String> {
+    let title_input: String = Input::new()
+        .with_prompt("Title")
+        .with_initial_text(entry.title.clone())
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+    if title_input.trim().is_empty() {
+        return Err("title cannot be empty".to_string());
+    }
+    entry.title = title_input.trim().to_string();
+
+    let namespace_default = entry.namespace.clone().unwrap_or_default();
+    let namespace_input: String = Input::new()
+        .with_prompt("Namespace (leave empty for ungrouped)")
+        .with_initial_text(namespace_default)
+        .allow_empty(true)
+        .interact_text()
+        .map_err(|e| e.to_string())?;
+    entry.namespace = normalize_namespace(&namespace_input)?;
+
     let kind_default = Kind::VARIANTS
         .iter()
-        .position(|&v| v == entry.kind.to_string())
+        .position(|&v| v == entry.kind.to_string().as_str())
         .unwrap_or(0);
     let kind_idx = Select::new()
         .with_prompt("Kind")
@@ -128,17 +185,16 @@ fn apply_interactive(entry: &mut Entry) -> Result<(), String> {
 
     let text = Editor::new()
         .require_save(true)
-        .edit(&entry.description)
+        .edit(entry.description.as_deref().unwrap_or(""))
         .map_err(|e| e.to_string())?;
     if let Some(d) = text {
-        if !d.trim().is_empty() {
-            entry.description = d.trim().to_string();
-        }
+        entry.description = Some(d.trim().to_string()).filter(|s| !s.is_empty());
     }
 
+    let current_priority = entry.priority.to_string();
     let priority_default = Priority::VARIANTS
         .iter()
-        .position(|&v| v == entry.priority.to_string())
+        .position(|&v| v == current_priority)
         .unwrap_or(1);
     let priority_idx = Select::new()
         .with_prompt("Priority")
@@ -148,9 +204,10 @@ fn apply_interactive(entry: &mut Entry) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     entry.priority = Priority::VARIANTS[priority_idx].parse().unwrap();
 
+    let current_status = entry.status.to_string();
     let status_default = Status::VARIANTS
         .iter()
-        .position(|&v| v == entry.status.to_string())
+        .position(|&v| v == current_status)
         .unwrap_or(0);
     let status_idx = Select::new()
         .with_prompt("Status")
@@ -189,7 +246,8 @@ fn apply_interactive(entry: &mut Entry) -> Result<(), String> {
     entry.tags = if tags_str.is_empty() {
         Vec::new()
     } else {
-        tags_str.split(',').map(|t| t.trim().to_string()).collect()
+        let parsed: Vec<String> = tags_str.split(',').map(|t| t.to_string()).collect();
+        normalize_tags(&parsed)
     };
 
     Ok(())

@@ -1,4 +1,5 @@
-use std::path::{Component, Path, PathBuf};
+use crate::entry::{normalize_namespace, Entry};
+use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 
 const DEFAULT_STORE_DIR: &str = ".mind-store";
@@ -26,64 +27,112 @@ pub fn ensure_store_exists() -> io::Result<()> {
     Ok(())
 }
 
-fn validate_relative_path(input: &str) -> Result<PathBuf, String> {
-    if input.trim().is_empty() {
-        return Err("path cannot be empty".to_string());
+pub fn validate_slug(input: &str) -> Result<String, String> {
+    let trimmed = input.trim().trim_end_matches(".toml");
+    if trimmed.is_empty() {
+        return Err("slug cannot be empty".to_string());
     }
-
-    let path = Path::new(input);
-    if path.is_absolute() {
-        return Err("absolute paths are not allowed".to_string());
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err("slug cannot contain path separators".to_string());
     }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(
+            "slug can only contain letters, numbers, '-', '_' and '.'".to_string(),
+        );
+    }
+    Ok(trimmed.to_string())
+}
 
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(part) => normalized.push(part),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                return Err("path traversal ('..') is not allowed".to_string());
-            }
-            Component::RootDir | Component::Prefix(_) => {
-                return Err("invalid path component".to_string());
-            }
+pub fn parse_namespace_and_slug(input: &str) -> Result<(Option<String>, String), String> {
+    let trimmed = input.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        return Err("entry identifier cannot be empty".to_string());
+    }
+    if let Some((namespace, slug)) = trimmed.rsplit_once('/') {
+        let namespace = normalize_namespace(namespace)?;
+        let slug = validate_slug(slug)?;
+        Ok((namespace, slug))
+    } else {
+        Ok((None, validate_slug(trimmed)?))
+    }
+}
+
+pub fn entry_path(slug_or_identifier: &str) -> Result<PathBuf, String> {
+    let (_, slug) = parse_namespace_and_slug(slug_or_identifier)?;
+    Ok(store_dir().join(format!("{slug}.toml")))
+}
+
+pub fn entry_slug(path: &Path) -> Option<String> {
+    if !path.is_file() || !path.extension().is_some_and(|ext| ext == "toml") {
+        return None;
+    }
+    path.file_stem().map(|s| s.to_string_lossy().to_string())
+}
+
+pub fn list_entry_paths() -> Result<Vec<PathBuf>, String> {
+    let mut out = Vec::new();
+    let dir = store_dir();
+    let rd = fs::read_dir(&dir).map_err(|e| format!("failed to read store '{}': {e}", dir.display()))?;
+    for item in rd {
+        let item = item.map_err(|e| e.to_string())?;
+        let path = item.path();
+        let hidden = path
+            .file_name()
+            .map(|n| n.to_string_lossy().starts_with('.'))
+            .unwrap_or(false);
+        if hidden {
+            continue;
+        }
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "toml") {
+            out.push(path);
         }
     }
+    out.sort();
+    Ok(out)
+}
 
-    if normalized.as_os_str().is_empty() {
-        return Err("path cannot be empty".to_string());
+pub fn load_entry(path: &Path) -> Result<Entry, String> {
+    let contents =
+        fs::read_to_string(path).map_err(|e| format!("failed to read entry file '{}': {e}", path.display()))?;
+    Entry::from_toml(&contents)
+        .map_err(|e| format!("failed to parse entry '{}': {e}", path.display()))
+}
+
+pub fn resolve_identifier(name: &str) -> Result<(PathBuf, Option<String>, String), String> {
+    let (namespace, slug) = parse_namespace_and_slug(name)?;
+    Ok((entry_path(&slug)?, namespace, slug))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_namespace_and_slug, validate_slug};
+
+    #[test]
+    fn validate_slug_accepts_flat_identifiers() {
+        assert_eq!(validate_slug("rework").unwrap(), "rework");
+        assert_eq!(validate_slug("project-x_1").unwrap(), "project-x_1");
     }
 
-    Ok(normalized)
-}
-
-/// Resolve an entry name (e.g. "project/idea") to a full path with .toml extension.
-pub fn entry_path(name: &str) -> Result<PathBuf, String> {
-    let rel = validate_relative_path(name)?;
-    let mut path = store_dir().join(rel);
-    if path.extension().is_none() {
-        path.set_extension("toml");
+    #[test]
+    fn validate_slug_rejects_path_separators() {
+        assert!(validate_slug("personal/rework").is_err());
+        assert!(validate_slug("../rework").is_err());
     }
-    Ok(path)
-}
 
-/// Resolve a subpath inside the store (for commands like ls/rm folder targets).
-pub fn store_subpath(path: &str) -> Result<PathBuf, String> {
-    let rel = validate_relative_path(path)?;
-    Ok(store_dir().join(rel))
-}
-
-/// Strip store prefix and .toml extension to get the entry name.
-pub fn entry_name(path: &Path) -> String {
-    let store = store_dir();
-    let rel = path.strip_prefix(&store).unwrap_or(path);
-    rel.with_extension("").to_string_lossy().to_string()
-}
-
-/// Create parent directories for an entry path if needed.
-pub fn ensure_parent_dirs(path: &Path) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+    #[test]
+    fn parse_namespace_and_slug_splits_compat_identifier() {
+        let (namespace, slug) = parse_namespace_and_slug("personal/garage/rework").unwrap();
+        assert_eq!(namespace.as_deref(), Some("personal/garage"));
+        assert_eq!(slug, "rework");
     }
-    Ok(())
+
+    #[test]
+    fn parse_namespace_and_slug_slug_only() {
+        let (namespace, slug) = parse_namespace_and_slug("rework").unwrap();
+        assert_eq!(namespace, None);
+        assert_eq!(slug, "rework");
+    }
 }

@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
 
@@ -110,10 +111,13 @@ impl Status {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
-    pub name: String,
+    pub title: String,
     pub kind: Kind,
-    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default = "default_priority")]
     pub priority: Priority,
+    #[serde(default = "default_status")]
     pub status: Status,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
@@ -121,21 +125,24 @@ pub struct Entry {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 impl Entry {
-    pub fn new(name: String, kind: Kind, description: String, priority: Priority) -> Self {
+    pub fn new(title: String, kind: Kind, priority: Priority, status: Status) -> Self {
         let now = Utc::now();
         Self {
-            name,
+            title,
             kind,
-            description,
+            description: None,
             priority,
-            status: Status::Active,
+            status,
             created: now,
             updated: now,
             tags: Vec::new(),
             deadline: None,
+            namespace: None,
         }
     }
 
@@ -150,4 +157,65 @@ impl Entry {
     pub fn touch(&mut self) {
         self.updated = Utc::now();
     }
+
+    pub fn normalize(&mut self) -> Result<(), String> {
+        self.description = self
+            .description
+            .as_ref()
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty());
+
+        self.tags = normalize_tags(&self.tags);
+
+        self.namespace = self
+            .namespace
+            .as_ref()
+            .map(|n| normalize_namespace(n))
+            .transpose()
+            ?
+            .flatten();
+        Ok(())
+    }
+}
+
+fn default_priority() -> Priority {
+    Priority::Medium
+}
+
+fn default_status() -> Status {
+    Status::Active
+}
+
+pub fn normalize_tags(tags: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for tag in tags {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = trimmed.to_lowercase();
+        if seen.insert(key) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+pub fn normalize_namespace(input: &str) -> Result<Option<String>, String> {
+    let trimmed = input.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.contains("//") {
+        return Err("namespace cannot contain empty segments".to_string());
+    }
+    let segments: Vec<&str> = trimmed.split('/').collect();
+    if segments
+        .iter()
+        .any(|segment| segment.is_empty() || *segment == "." || *segment == "..")
+    {
+        return Err("namespace contains invalid path segments".to_string());
+    }
+    Ok(Some(segments.join("/")))
 }

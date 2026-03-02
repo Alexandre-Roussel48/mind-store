@@ -1,42 +1,29 @@
 use dialoguer::Confirm;
 use std::fs;
-use std::path::{Path, PathBuf};
 
-use crate::{git, store};
+use crate::{extensions, git, store};
 
-pub fn run(name: &str, recursive: bool, force: bool) -> Result<(), String> {
+pub fn run(identifier: &str, force: bool) -> Result<(), String> {
     store::ensure_store_exists().map_err(|e| e.to_string())?;
 
-    let store_root = store::store_dir();
-    let dir_path = store::store_subpath(name)?;
-    let file_path = store::entry_path(name)?;
-
-    let target = if file_path.exists() {
-        Target::File(file_path)
-    } else if dir_path.exists() && dir_path.is_dir() {
-        if !recursive {
+    let (path, expected_namespace, slug) = store::resolve_identifier(identifier)?;
+    if !path.exists() {
+        return Err(format!("Entry '{slug}' not found."));
+    }
+    if let Some(ns) = expected_namespace {
+        let entry = store::load_entry(&path)?;
+        if entry.namespace.as_deref() != Some(ns.as_str()) {
             return Err(format!(
-                "'{name}' is a folder. Use `mind rm -r {name}` to remove it recursively."
+                "Entry '{slug}' exists but is in namespace '{}' (requested '{}').",
+                entry.namespace.unwrap_or_else(|| "ungrouped".to_string()),
+                ns
             ));
-        }
-        Target::Dir(dir_path)
-    } else {
-        return Err(format!("Entry or folder '{name}' not found."));
-    };
-
-    if let Target::Dir(_) = target {
-        if !recursive {
-            return Err("Recursive flag is required to remove folders.".to_string());
         }
     }
 
     if !force {
-        let prompt = match &target {
-            Target::File(_) => format!("Remove entry '{name}'?"),
-            Target::Dir(_) => format!("Remove folder '{name}' recursively?"),
-        };
         let confirm = Confirm::new()
-            .with_prompt(prompt)
+            .with_prompt(format!("Remove entry '{slug}'?"))
             .default(false)
             .interact()
             .map_err(|e| e.to_string())?;
@@ -46,38 +33,10 @@ pub fn run(name: &str, recursive: bool, force: bool) -> Result<(), String> {
         }
     }
 
-    match target {
-        Target::File(path) => {
-            fs::remove_file(&path).map_err(|e| format!("failed to remove entry: {e}"))?;
-            cleanup_empty_parents(path.parent(), &store_root);
-        }
-        Target::Dir(path) => {
-            fs::remove_dir_all(&path).map_err(|e| format!("failed to remove folder: {e}"))?;
-            cleanup_empty_parents(path.parent(), &store_root);
-        }
-    }
+    fs::remove_file(&path).map_err(|e| format!("failed to remove entry: {e}"))?;
 
-    git::add_and_commit(&format!("mind: remove {name}"))?;
-    println!("Removed '{name}'.");
+    git::add_and_commit(&format!("mind: remove {slug}"))?;
+    extensions::run_event("rm", &slug, None);
+    println!("Removed '{slug}'.");
     Ok(())
-}
-
-enum Target {
-    File(PathBuf),
-    Dir(PathBuf),
-}
-
-fn cleanup_empty_parents(start: Option<&Path>, store_root: &Path) {
-    let mut dir = start.map(|p| p.to_path_buf());
-    while let Some(d) = dir {
-        if d == store_root {
-            break;
-        }
-        if d.read_dir().map(|mut rd| rd.next().is_none()).unwrap_or(false) {
-            let _ = fs::remove_dir(&d);
-            dir = d.parent().map(|p| p.to_path_buf());
-        } else {
-            break;
-        }
-    }
 }

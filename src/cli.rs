@@ -1,10 +1,12 @@
 use clap::{Parser, Subcommand};
+use std::ffi::OsString;
 
 #[derive(Parser)]
 #[command(
     name = "mind",
     about = "A Git-backed store for ideas and todos",
-    version
+    version,
+    allow_external_subcommands = true
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -22,8 +24,11 @@ pub enum Commands {
 
     /// List entries in the store
     Ls {
-        /// Path to list (folder or entry path)
-        path: Option<String>,
+        /// Namespace prefix filter (e.g. "personal" matches personal/*)
+        namespace_prefix: Option<String>,
+        /// Group entries by: namespace, kind, priority, status, tags
+        #[arg(long, default_value = "namespace")]
+        group: String,
         /// Output arborescence as JSON
         #[arg(long)]
         json: bool,
@@ -52,8 +57,8 @@ pub enum Commands {
 
     /// Show an entry
     Show {
-        /// Entry name (e.g. "project/my-idea")
-        name: String,
+        /// Entry slug or namespace/slug identifier
+        identifier: String,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -61,8 +66,14 @@ pub enum Commands {
 
     /// Insert a new entry
     Insert {
-        /// Entry name (e.g. "project/my-idea")
-        name: String,
+        /// Entry slug or compatibility namespace/slug identifier
+        identifier: String,
+        /// Human-readable title (defaults to slug when omitted)
+        #[arg(long)]
+        title: Option<String>,
+        /// Namespace (e.g. "personal/garage")
+        #[arg(long)]
+        namespace: Option<String>,
         /// Kind: idea, todo, note
         #[arg(short, long)]
         kind: Option<String>,
@@ -72,6 +83,9 @@ pub enum Commands {
         /// Priority: low, medium, high, critical
         #[arg(short, long)]
         priority: Option<String>,
+        /// Status: active, done, archived
+        #[arg(short, long)]
+        status: Option<String>,
         /// [optional] Deadline in YYYY-MM-DD format
         #[arg(long)]
         deadline: Option<String>,
@@ -82,8 +96,14 @@ pub enum Commands {
 
     /// Edit an existing entry (pass any field flags to update only those fields non-interactively)
     Edit {
-        /// Entry name
-        name: String,
+        /// Entry slug or namespace/slug identifier
+        identifier: String,
+        /// Title
+        #[arg(long)]
+        title: Option<String>,
+        /// Namespace (use "none" to clear)
+        #[arg(long)]
+        namespace: Option<String>,
         /// Kind: idea, todo, note
         #[arg(short, long)]
         kind: Option<String>,
@@ -109,11 +129,8 @@ pub enum Commands {
 
     /// Remove an entry
     Rm {
-        /// Entry name or folder path
-        name: String,
-        /// Recursively remove a folder and all entries inside it
-        #[arg(short, long)]
-        recursive: bool,
+        /// Entry slug or namespace/slug identifier
+        identifier: String,
         /// Skip confirmation prompt
         #[arg(short, long)]
         force: bool,
@@ -143,5 +160,8 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
 
 }
